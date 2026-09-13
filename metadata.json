@@ -1,0 +1,6 @@
+{
+  "name": "1on1 Chat App",
+  "description": "リアルタイムでメッセージ送受信・返信・リアクションができる1対1チャットアプリケーション（Firebase & GitHub Pages対応）",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

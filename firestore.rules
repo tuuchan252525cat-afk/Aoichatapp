@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write to users collection
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    
+    // Allow read/write to chats and nested messages
+    match /chats/{chatId} {
+      allow read, write: if true;
+      
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}
