@@ -234,6 +234,15 @@ export async function updateFirestoreUser(user: User): Promise<void> {
   }
 }
 
+// Delete a user from Firestore
+export async function deleteFirestoreUser(userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, USERS_COLLECTION, userId));
+  } catch (error) {
+    console.error('Error deleting user in Firestore:', error);
+  }
+}
+
 // Reset chat messages to sample replica
 export async function resetTokudomeChat(): Promise<void> {
   const tokudomeChatId = getChatId(CURRENT_USER.id, 'tokudome');

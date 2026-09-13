@@ -10,14 +10,16 @@ import {
   resetTokudomeChat,
   clearAllUsersAndChats,
   createFirestoreUser,
-  updateFirestoreUser
+  updateFirestoreUser,
+  deleteFirestoreUser
 } from './lib/chatService';
 import { UserList } from './components/UserList';
 import { ChatArea } from './components/ChatArea';
+import { EditPage } from './components/EditPage';
 import { GithubDeployModal } from './components/GithubDeployModal';
 
-const USERS_STORAGE_KEY = 'chat_app_custom_users_v2';
-const CURRENT_USER_STORAGE_KEY = 'chat_app_current_user_v2';
+const USERS_STORAGE_KEY = 'chat_app_custom_users_v3';
+const CURRENT_USER_STORAGE_KEY = 'chat_app_current_user_v3';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(() => {
@@ -46,6 +48,35 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState<boolean>(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState<boolean>(false);
+
+  // Hash-based routing (#edit or standard chat)
+  const [currentHash, setCurrentHash] = useState<string>(() => {
+    return window.location.hash || '';
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash || '');
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
+
+  const navigateToEdit = () => {
+    window.location.hash = '#edit';
+  };
+
+  const navigateToChat = () => {
+    window.location.hash = '';
+    // Also remove trailing # from URL if possible for clean look
+    if (window.location.href.includes('#')) {
+      history.pushState('', document.title, window.location.pathname + window.location.search);
+      setCurrentHash('');
+    }
+  };
 
   // Sync users to localStorage
   useEffect(() => {
@@ -168,7 +199,7 @@ export default function App() {
     }
   };
 
-  // Clear all users request from user
+  // Clear all users request
   const handleClearAllUsers = async () => {
     try {
       await clearAllUsersAndChats();
@@ -195,7 +226,9 @@ export default function App() {
       console.error('Failed to save new user to Firestore:', err);
     }
 
-    setActivePartner(newUser);
+    if (!activePartner) {
+      setActivePartner(newUser);
+    }
   };
 
   // Update existing user or currentUser
@@ -214,6 +247,22 @@ export default function App() {
       await updateFirestoreUser(updatedUser);
     } catch (err) {
       console.error('Failed to update user in Firestore:', err);
+    }
+  };
+
+  // Delete an existing user
+  const handleDeleteUser = async (userId: string) => {
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    if (activePartner && activePartner.id === userId) {
+      const nextPartner = users.find((u) => u.id !== userId && u.id !== currentUser.id) || null;
+      setActivePartner(nextPartner);
+    }
+
+    try {
+      await deleteFirestoreUser(userId);
+    } catch (err) {
+      console.error('Failed to delete user in Firestore:', err);
     }
   };
 
@@ -255,6 +304,33 @@ export default function App() {
     return summary;
   }, [messages, activePartner]);
 
+  // If URL hash is #edit, render the comprehensive Edit & User Management Page
+  if (currentHash === '#edit' || currentHash.startsWith('#edit')) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <EditPage
+          users={users}
+          currentUser={currentUser}
+          onAddUser={handleAddUser}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
+          onSwitchCurrentUser={handleSwitchCurrentUser}
+          onResetData={handleResetData}
+          onClearAllUsers={handleClearAllUsers}
+          onOpenDeployModal={() => setIsDeployModalOpen(true)}
+          onBackToChat={navigateToChat}
+        />
+
+        {/* GitHub Pages Deployment Guide Modal */}
+        <GithubDeployModal
+          isOpen={isDeployModalOpen}
+          onClose={() => setIsDeployModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  // Standard Chat View
   return (
     <div 
       id="app-container"
@@ -273,11 +349,7 @@ export default function App() {
               setIsMobileChatOpen(true);
             }}
             onSwitchCurrentUser={handleSwitchCurrentUser}
-            onUpdateUser={handleUpdateUser}
-            onResetData={handleResetData}
-            onClearAllUsers={handleClearAllUsers}
-            onAddUser={handleAddUser}
-            onOpenDeployModal={() => setIsDeployModalOpen(true)}
+            onNavigateToEdit={navigateToEdit}
             conversationsSummary={conversationsSummary}
           />
         </div>
@@ -301,8 +373,15 @@ export default function App() {
               </div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">メッセージをはじめよう</h2>
               <p className="text-sm text-gray-500 max-w-xs mb-4">
-                左側のユーザー一覧から会話相手を選択するか、上部の「+」ボタンから新しいユーザーを追加してください。
+                左側のユーザー一覧から会話相手を選択するか、管理画面から新しいユーザーを追加してください。
               </p>
+              <button
+                id="empty-chat-go-edit-btn"
+                onClick={navigateToEdit}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                新規ユーザーを追加・管理 (#edit)
+              </button>
             </div>
           )}
         </div>
