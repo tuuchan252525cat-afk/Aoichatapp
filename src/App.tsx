@@ -1,61 +1,96 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, ChatMessage, MessageReply } from './types';
-import { CURRENT_USER, INITIAL_USERS, TOKUDOME_INITIAL_MESSAGES, OTHER_USERS_SEEDS } from './lib/sampleData';
+import { CURRENT_USER, INITIAL_USERS } from './lib/sampleData';
 import { 
   getChatId, 
-  seedInitialDataIfNeeded, 
   subscribeToMessages, 
   sendChatMessage, 
   toggleMessageReaction, 
   deleteChatMessage,
-  resetTokudomeChat 
+  resetTokudomeChat,
+  clearAllUsersAndChats,
+  createFirestoreUser,
+  updateFirestoreUser
 } from './lib/chatService';
 import { UserList } from './components/UserList';
 import { ChatArea } from './components/ChatArea';
 import { GithubDeployModal } from './components/GithubDeployModal';
 
+const USERS_STORAGE_KEY = 'chat_app_custom_users_v2';
+const CURRENT_USER_STORAGE_KEY = 'chat_app_current_user_v2';
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<User>(CURRENT_USER);
-  const [users, setUsers] = useState<User[]>([CURRENT_USER, ...INITIAL_USERS]);
-  const [activePartner, setActivePartner] = useState<User>(INITIAL_USERS[0]); // Tokudome Hiroki
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    try {
+      const saved = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : CURRENT_USER;
+    } catch {
+      return CURRENT_USER;
+    }
+  });
+
+  const [users, setUsers] = useState<User[]>(() => {
+    try {
+      const saved = localStorage.getItem(USERS_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [CURRENT_USER, ...INITIAL_USERS];
+    } catch {
+      return [CURRENT_USER, ...INITIAL_USERS];
+    }
+  });
+
+  const [activePartner, setActivePartner] = useState<User | null>(() => {
+    const saved = users.find(u => u.id !== currentUser.id);
+    return saved || null;
+  });
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState<boolean>(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState<boolean>(false);
 
+  // Sync users to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+  }, [users]);
+
+  // Sync currentUser to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(currentUser));
+    } catch (e) {
+      console.warn('LocalStorage save error:', e);
+    }
+  }, [currentUser]);
+
   // Active chat ID based on current user & active partner
   const currentChatId = useMemo(() => {
+    if (!activePartner) return '';
     return getChatId(currentUser.id, activePartner.id);
-  }, [currentUser.id, activePartner.id]);
-
-  // Seed and initial setup
-  useEffect(() => {
-    seedInitialDataIfNeeded();
-  }, []);
+  }, [currentUser.id, activePartner]);
 
   // Subscribe to real-time messages for the active conversation
   useEffect(() => {
-    // Initial fallback messages while Firestore loads
-    if (activePartner.id === 'tokudome' && currentUser.id === 'user_me') {
-      setMessages(TOKUDOME_INITIAL_MESSAGES.map((m) => ({ ...m, chatId: currentChatId })));
-    } else if (OTHER_USERS_SEEDS[activePartner.id]) {
-      setMessages(OTHER_USERS_SEEDS[activePartner.id].map((m) => ({ ...m, chatId: currentChatId })));
-    } else {
+    if (!currentChatId || !activePartner) {
       setMessages([]);
+      return;
     }
 
     const unsubscribe = subscribeToMessages(currentChatId, (liveMsgs) => {
-      if (liveMsgs && liveMsgs.length > 0) {
-        setMessages(liveMsgs);
-      }
+      setMessages(liveMsgs || []);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [currentChatId, activePartner.id, currentUser.id]);
+  }, [currentChatId, activePartner]);
 
   // Handle Send Message
   const handleSendMessage = async (text: string, replyTo?: MessageReply, imageUrl?: string) => {
+    if (!activePartner || !currentChatId) return;
+
     const newMsgData: Omit<ChatMessage, 'id' | 'chatId'> = {
       senderId: currentUser.id,
       senderName: currentUser.name,
@@ -89,6 +124,8 @@ export default function App() {
     emoji: string, 
     currentReactions?: Record<string, string[]>
   ) => {
+    if (!currentChatId) return;
+
     // Optimistic reaction update
     setMessages((prev) =>
       prev.map((msg) => {
@@ -122,6 +159,7 @@ export default function App() {
 
   // Handle Delete Message
   const handleDeleteMessage = async (messageId: string) => {
+    if (!currentChatId) return;
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
     try {
       await deleteChatMessage(currentChatId, messageId);
@@ -130,86 +168,87 @@ export default function App() {
     }
   };
 
+  // Clear all users request from user
+  const handleClearAllUsers = async () => {
+    try {
+      await clearAllUsersAndChats();
+    } catch (err) {
+      console.error('Failed to clear from Firestore:', err);
+    }
+    setUsers([currentUser]);
+    setActivePartner(null);
+    setMessages([]);
+    setIsMobileChatOpen(false);
+  };
+
+  // Add a new user
+  const handleAddUser = async (newUser: User) => {
+    setUsers((prev) => {
+      const exists = prev.some((u) => u.id === newUser.id);
+      if (exists) return prev;
+      return [...prev, newUser];
+    });
+
+    try {
+      await createFirestoreUser(newUser);
+    } catch (err) {
+      console.error('Failed to save new user to Firestore:', err);
+    }
+
+    setActivePartner(newUser);
+  };
+
+  // Update existing user or currentUser
+  const handleUpdateUser = async (updatedUser: User) => {
+    setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+
+    if (currentUser.id === updatedUser.id) {
+      setCurrentUser(updatedUser);
+    }
+
+    if (activePartner && activePartner.id === updatedUser.id) {
+      setActivePartner(updatedUser);
+    }
+
+    try {
+      await updateFirestoreUser(updatedUser);
+    } catch (err) {
+      console.error('Failed to update user in Firestore:', err);
+    }
+  };
+
   // Reset sample data
   const handleResetData = async () => {
     try {
       await resetTokudomeChat();
-      setMessages(TOKUDOME_INITIAL_MESSAGES.map((m) => ({ ...m, chatId: currentChatId })));
     } catch (err) {
       console.error('Reset error:', err);
-      setMessages(TOKUDOME_INITIAL_MESSAGES.map((m) => ({ ...m, chatId: currentChatId })));
     }
+    setUsers([CURRENT_USER, ...INITIAL_USERS]);
+    setCurrentUser(CURRENT_USER);
+    setActivePartner(INITIAL_USERS[0]);
   };
 
-  // Switch current POV user (e.g. Test from Tokudome's side)
+  // Switch current POV user (e.g. Test from other user side)
   const handleSwitchCurrentUser = (newUser: User) => {
     setCurrentUser(newUser);
-    // If currently talking to self, change active partner to someone else
-    if (activePartner.id === newUser.id) {
-      const nextPartner = users.find((u) => u.id !== newUser.id) || CURRENT_USER;
+    if (activePartner && activePartner.id === newUser.id) {
+      const nextPartner = users.find((u) => u.id !== newUser.id) || null;
       setActivePartner(nextPartner);
     }
   };
 
   // Build conversations summary for sidebar
   const conversationsSummary = useMemo(() => {
-    const summary: Record<string, { lastText: string; time: string; senderId: string; isLiked?: boolean }> = {
-      tokudome: {
-        lastText: messages.length > 0 ? messages[messages.length - 1].text : 'よろしく',
-        time: '1時間',
-        senderId: messages.length > 0 ? messages[messages.length - 1].senderId : 'tokudome',
-        isLiked: true
-      },
-      rikito: {
-        lastText: 'てかスマホ返却されたん？',
-        time: '2時間',
-        senderId: 'user_me'
-      },
-      km_film: {
-        lastText: '添付ファイルを送信しました。',
-        time: '16時間',
-        senderId: 'km_film'
-      },
-      satomichi: {
-        lastText: '担任をどう説得したのか気になって',
-        time: '16時間',
-        senderId: 'user_me'
-      },
-      hinata: {
-        lastText: '頼んだ',
-        time: '18時間',
-        senderId: 'user_me'
-      },
-      mert: {
-        lastText: 'Hey Yuto it was nice to meet you. I wish ...',
-        time: '4日',
-        senderId: 'mert'
-      },
-      ren: {
-        lastText: 'ありがとうね',
-        time: '5日',
-        senderId: 'ren'
-      },
-      sueno: {
-        lastText: 'ありがとう！！',
-        time: '5日',
-        senderId: 'sueno'
-      },
-      naoki: {
-        lastText: '写真を送信しました。',
-        time: '5日',
-        senderId: 'naoki'
-      }
-    };
+    const summary: Record<string, { lastText: string; time: string; senderId: string; isLiked?: boolean }> = {};
 
-    // If active conversation has live messages, update its preview
     if (messages.length > 0 && activePartner) {
       const last = messages[messages.length - 1];
       summary[activePartner.id] = {
         lastText: last.text || (last.imageUrl ? '写真を送信しました。' : '添付ファイル'),
         time: '今',
         senderId: last.senderId,
-        isLiked: last.reactions && Object.keys(last.reactions).length > 0
+        isLiked: Boolean(last.reactions && Object.keys(last.reactions).length > 0)
       };
     }
 
@@ -228,13 +267,16 @@ export default function App() {
           <UserList
             users={users}
             currentUser={currentUser}
-            activePartnerId={activePartner.id}
+            activePartnerId={activePartner?.id || ''}
             onSelectUser={(partner) => {
               setActivePartner(partner);
               setIsMobileChatOpen(true);
             }}
             onSwitchCurrentUser={handleSwitchCurrentUser}
+            onUpdateUser={handleUpdateUser}
             onResetData={handleResetData}
+            onClearAllUsers={handleClearAllUsers}
+            onAddUser={handleAddUser}
             onOpenDeployModal={() => setIsDeployModalOpen(true)}
             conversationsSummary={conversationsSummary}
           />
@@ -242,15 +284,27 @@ export default function App() {
 
         {/* Right: Active Chat Area */}
         <div className={`flex-1 h-full ${!isMobileChatOpen ? 'hidden md:flex' : 'flex'}`}>
-          <ChatArea
-            partner={activePartner}
-            currentUser={currentUser}
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onToggleReaction={handleToggleReaction}
-            onDeleteMessage={handleDeleteMessage}
-            onBackMobile={() => setIsMobileChatOpen(false)}
-          />
+          {activePartner ? (
+            <ChatArea
+              partner={activePartner}
+              currentUser={currentUser}
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              onToggleReaction={handleToggleReaction}
+              onDeleteMessage={handleDeleteMessage}
+              onBackMobile={() => setIsMobileChatOpen(false)}
+            />
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#fafafa]">
+              <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-4 text-2xl">
+                💬
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">メッセージをはじめよう</h2>
+              <p className="text-sm text-gray-500 max-w-xs mb-4">
+                左側のユーザー一覧から会話相手を選択するか、上部の「+」ボタンから新しいユーザーを追加してください。
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

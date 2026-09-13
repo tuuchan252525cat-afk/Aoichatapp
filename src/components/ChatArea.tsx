@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, ChatMessage, MessageReply } from '../types';
 import { 
-  Phone, 
-  Video, 
   Info, 
   Smile, 
   Image as ImageIcon, 
@@ -153,20 +151,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
         {/* Action icons on right */}
         <div className="flex items-center gap-1 text-gray-700">
-          <button 
-            id="chat-phone-btn"
-            title="音声通話" 
-            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 hover:text-gray-900 transition cursor-pointer"
-          >
-            <Phone className="w-5 h-5" />
-          </button>
-          <button 
-            id="chat-video-btn"
-            title="ビデオ通話" 
-            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 hover:text-gray-900 transition cursor-pointer"
-          >
-            <Video className="w-5 h-5" />
-          </button>
           <button 
             id="chat-info-btn"
             title="詳細情報" 

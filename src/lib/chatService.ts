@@ -192,6 +192,48 @@ export async function deleteChatMessage(chatId: string, messageId: string): Prom
   }
 }
 
+// Clear all users and conversations
+export async function clearAllUsersAndChats(): Promise<void> {
+  try {
+    const usersCol = collection(db, USERS_COLLECTION);
+    const userSnapshot = await getDocs(usersCol);
+    for (const docSnap of userSnapshot.docs) {
+      await deleteDoc(doc(db, USERS_COLLECTION, docSnap.id));
+    }
+
+    const chatsCol = collection(db, CHATS_COLLECTION);
+    const chatsSnapshot = await getDocs(chatsCol);
+    for (const chatSnap of chatsSnapshot.docs) {
+      const messagesCol = collection(db, CHATS_COLLECTION, chatSnap.id, 'messages');
+      const messagesSnap = await getDocs(messagesCol);
+      for (const msgSnap of messagesSnap.docs) {
+        await deleteDoc(doc(messagesCol, msgSnap.id));
+      }
+      await deleteDoc(doc(db, CHATS_COLLECTION, chatSnap.id));
+    }
+  } catch (error) {
+    console.error('Error clearing users and chats:', error);
+  }
+}
+
+// Add a new user to Firestore
+export async function createFirestoreUser(user: User): Promise<void> {
+  try {
+    await setDoc(doc(db, USERS_COLLECTION, user.id), user);
+  } catch (error) {
+    console.error('Error creating user in Firestore:', error);
+  }
+}
+
+// Update a user in Firestore
+export async function updateFirestoreUser(user: User): Promise<void> {
+  try {
+    await setDoc(doc(db, USERS_COLLECTION, user.id), user, { merge: true });
+  } catch (error) {
+    console.error('Error updating user in Firestore:', error);
+  }
+}
+
 // Reset chat messages to sample replica
 export async function resetTokudomeChat(): Promise<void> {
   const tokudomeChatId = getChatId(CURRENT_USER.id, 'tokudome');

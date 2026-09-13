@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { User, Conversation } from '../types';
+import { User } from '../types';
 import { 
   Search, 
-  Edit, 
-  MoreHorizontal, 
   UserPlus, 
   RotateCcw,
-  Sparkles,
+  Trash2,
   Github,
-  Check
+  Check,
+  MoreHorizontal,
+  Camera,
+  Edit2
 } from 'lucide-react';
+import { AddUserModal } from './AddUserModal';
+import { EditProfileModal } from './EditProfileModal';
 
 interface UserListProps {
   users: User[];
@@ -17,7 +20,10 @@ interface UserListProps {
   activePartnerId: string;
   onSelectUser: (user: User) => void;
   onSwitchCurrentUser: (user: User) => void;
+  onUpdateUser: (user: User) => void;
   onResetData: () => void;
+  onClearAllUsers: () => void;
+  onAddUser: (user: User) => void;
   onOpenDeployModal: () => void;
   conversationsSummary: Record<string, { lastText: string; time: string; senderId: string; isLiked?: boolean }>;
 }
@@ -28,17 +34,23 @@ export const UserList: React.FC<UserListProps> = ({
   activePartnerId,
   onSelectUser,
   onSwitchCurrentUser,
+  onUpdateUser,
   onResetData,
+  onClearAllUsers,
+  onAddUser,
   onOpenDeployModal,
   conversationsSummary
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showUserSwitcher, setShowUserSwitcher] = useState(false);
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
-  const filteredUsers = users.filter((u) => {
-    if (u.id === currentUser.id) return false;
+  const otherUsers = users.filter((u) => u.id !== currentUser.id);
+
+  const filteredUsers = otherUsers.filter((u) => {
     const nameMatch = u.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const displayMatch = u.displayName.toLowerCase().includes(searchQuery.toLowerCase());
+    const displayMatch = (u.displayName || '').toLowerCase().includes(searchQuery.toLowerCase());
     return nameMatch || displayMatch;
   });
 
@@ -60,14 +72,16 @@ export const UserList: React.FC<UserListProps> = ({
             >
               <h1 className="text-xl font-bold text-gray-900 tracking-tight flex items-center gap-1.5">
                 メッセージ
-                <svg className={`w-4 h-4 text-gray-500 transition-transform ${showUserSwitcher ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
+                {users.length > 1 && (
+                  <svg className={`w-4 h-4 text-gray-500 transition-transform ${showUserSwitcher ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                )}
               </h1>
             </button>
 
             {/* Current POV Switcher Dropdown */}
-            {showUserSwitcher && (
+            {showUserSwitcher && users.length > 1 && (
               <div 
                 id="user-switch-dropdown"
                 className="absolute left-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
@@ -106,10 +120,31 @@ export const UserList: React.FC<UserListProps> = ({
           </div>
 
           {/* Right Header Actions */}
-          <div className="flex items-center gap-1.5 text-gray-700">
-            <span className="text-sm font-medium text-gray-500 hover:text-gray-900 cursor-pointer mr-1 hidden sm:inline">
-              リクエスト
-            </span>
+          <div className="flex items-center gap-1 text-gray-700">
+            <button
+              id="add-user-header-button"
+              onClick={() => setIsAddUserOpen(true)}
+              title="新規ユーザーを追加（アイコン画像アップロード対応）"
+              className="p-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded-full transition cursor-pointer"
+            >
+              <UserPlus className="w-5 h-5" />
+            </button>
+            <button
+              id="clear-all-users-button"
+              onClick={onClearAllUsers}
+              title="ユーザー・メッセージを全削除"
+              className="p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-full transition cursor-pointer"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+            <button
+              id="reset-sample-data-button"
+              onClick={onResetData}
+              title="初期サンプルデータを復元"
+              className="p-2 text-gray-600 hover:text-emerald-600 hover:bg-gray-100 rounded-full transition cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
             <button
               id="github-pages-help-button"
               onClick={onOpenDeployModal}
@@ -117,14 +152,6 @@ export const UserList: React.FC<UserListProps> = ({
               className="p-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded-full transition cursor-pointer"
             >
               <Github className="w-5 h-5" />
-            </button>
-            <button
-              id="reset-sample-data-button"
-              onClick={onResetData}
-              title="データを初期状態に復元"
-              className="p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-full transition cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -143,18 +170,50 @@ export const UserList: React.FC<UserListProps> = ({
         </div>
       </div>
 
-      {/* Active User Status Banner */}
-      <div className="px-4 py-2 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-b border-gray-100 flex items-center justify-between text-xs text-gray-600">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span>ログイン中: <strong className="text-gray-900">{currentUser.name}</strong></span>
+      {/* Active User Status Banner with Avatar edit quick button */}
+      <div className="px-3.5 py-2.5 bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border-b border-gray-100 flex items-center justify-between text-xs text-gray-600">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="relative group shrink-0">
+            <img
+              src={currentUser.avatarUrl}
+              alt={currentUser.name}
+              className="w-7 h-7 rounded-full object-cover ring-1 ring-blue-500/30"
+            />
+            <button
+              id="edit-current-user-avatar-btn"
+              onClick={() => setEditingUser(currentUser)}
+              title="アイコン画像を変更"
+              className="absolute inset-0 bg-black/40 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="truncate flex flex-col">
+            <span className="text-[11px] text-gray-500 leading-tight">ログイン中</span>
+            <span className="font-semibold text-gray-900 truncate leading-tight">{currentUser.name}</span>
+          </div>
         </div>
-        <span className="text-[11px] text-blue-600 font-medium cursor-pointer hover:underline" onClick={() => setShowUserSwitcher(true)}>
-          変更
-        </span>
+
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          <button
+            id="edit-profile-banner-btn"
+            onClick={() => setEditingUser(currentUser)}
+            title="アイコン・プロフィール画像を変更"
+            className="px-2 py-1 bg-white hover:bg-blue-50 text-blue-600 rounded-lg text-[11px] font-medium border border-blue-200/60 shadow-2xs flex items-center gap-1 transition cursor-pointer"
+          >
+            <Camera className="w-3 h-3" />
+            アイコン変更
+          </button>
+          {users.length > 1 && (
+            <button
+              id="switch-user-banner-btn"
+              onClick={() => setShowUserSwitcher(true)}
+              className="text-[11px] text-gray-500 hover:text-gray-900 font-medium px-1 cursor-pointer"
+            >
+              切替
+            </button>
+          )}
+        </div>
       </div>
 
       {/* User List rows matching Screenshot 1 */}
@@ -182,18 +241,19 @@ export const UserList: React.FC<UserListProps> = ({
           }
 
           return (
-            <button
+            <div
               key={user.id}
-              id={`user-item-${user.id}`}
-              onClick={() => onSelectUser(user)}
-              className={`w-full px-4 py-3.5 flex items-center gap-3.5 transition-all text-left cursor-pointer group relative ${
+              className={`w-full px-4 py-3.5 flex items-center gap-3.5 transition-all text-left group relative ${
                 isActive 
                   ? 'bg-gray-100/90 font-medium' 
                   : 'hover:bg-gray-50/90'
               }`}
             >
               {/* Circular Avatar */}
-              <div className="relative shrink-0">
+              <div 
+                className="relative shrink-0 cursor-pointer"
+                onClick={() => onSelectUser(user)}
+              >
                 <img
                   src={user.avatarUrl}
                   alt={user.name}
@@ -204,8 +264,11 @@ export const UserList: React.FC<UserListProps> = ({
                 )}
               </div>
 
-              {/* User info & last message preview matching Screenshot 1 */}
-              <div className="flex-1 min-w-0 pr-2">
+              {/* User info & last message preview */}
+              <div 
+                className="flex-1 min-w-0 pr-1 cursor-pointer"
+                onClick={() => onSelectUser(user)}
+              >
                 <div className="flex items-center justify-between mb-0.5">
                   <span className={`text-[15px] truncate ${isActive ? 'text-gray-900 font-semibold' : 'text-gray-900 font-medium'}`}>
                     {user.name}
@@ -218,20 +281,56 @@ export const UserList: React.FC<UserListProps> = ({
                 </p>
               </div>
 
-              {/* 3 dots action button */}
-              <div className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-700 rounded-full shrink-0">
-                <MoreHorizontal className="w-5 h-5" />
-              </div>
-            </button>
+              {/* Edit User Avatar / Profile action button */}
+              <button
+                id={`edit-user-btn-${user.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingUser(user);
+                }}
+                title={`${user.name} のアイコン・プロフィールを変更`}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-gray-400 hover:text-blue-600 hover:bg-gray-200/60 rounded-full shrink-0 cursor-pointer"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            </div>
           );
         })}
 
         {filteredUsers.length === 0 && (
-          <div className="p-8 text-center text-sm text-gray-500">
-            ユーザーが見つかりませんでした
+          <div className="p-8 text-center flex flex-col items-center justify-center h-48">
+            <p className="text-sm text-gray-500 mb-3">ユーザーがいません</p>
+            <button
+              id="empty-state-add-user-btn"
+              onClick={() => setIsAddUserOpen(true)}
+              className="px-4 py-2 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              新しいユーザーを追加
+            </button>
           </div>
         )}
       </div>
+
+      {/* Add User Modal */}
+      <AddUserModal
+        isOpen={isAddUserOpen}
+        onClose={() => setIsAddUserOpen(false)}
+        onAddUser={onAddUser}
+      />
+
+      {/* Edit Profile / Avatar Modal */}
+      {editingUser && (
+        <EditProfileModal
+          isOpen={Boolean(editingUser)}
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onUpdateUser={(updated) => {
+            onUpdateUser(updated);
+            setEditingUser(null);
+          }}
+        />
+      )}
     </aside>
   );
 };
