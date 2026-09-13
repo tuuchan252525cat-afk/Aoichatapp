@@ -73,6 +73,13 @@ git push -u origin main`
             </div>
           </div>
 
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900 text-xs leading-relaxed">
+            <strong>ℹ️ 「Node.js 20 is deprecated...」の警告について:</strong>
+            <p className="mt-1 text-blue-800">
+              これはGitHub側の環境移行に伴う<strong>事前アナウンス警告</strong>であり、ビルドエラーではありません。デプロイ自体は正常に完了しサイトは動作します。最新の <code>.github/workflows/deploy.yml</code> ではこの警告を防止する設定が適用されています。
+            </p>
+          </div>
+
           <div className="space-y-4">
             {steps.map((step, idx) => (
               <div key={idx} className="bg-gray-50 border border-gray-200/80 rounded-2xl p-4">

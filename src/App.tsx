@@ -163,11 +163,11 @@ export default function App() {
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderAvatar: currentUser.avatarUrl,
-      text,
-      imageUrl,
+      text: text || '',
       timestamp: Date.now(),
-      replyTo,
-      reactions: {}
+      reactions: {},
+      ...(imageUrl ? { imageUrl } : {}),
+      ...(replyTo ? { replyTo } : {})
     };
 
     // Optimistic local update
