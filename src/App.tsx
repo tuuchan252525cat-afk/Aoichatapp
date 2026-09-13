@@ -3,6 +3,7 @@ import { User, ChatMessage, MessageReply } from './types';
 import { CURRENT_USER, INITIAL_USERS } from './lib/sampleData';
 import { 
   getChatId, 
+  subscribeToUsers,
   subscribeToMessages, 
   sendChatMessage, 
   toggleMessageReaction, 
@@ -18,8 +19,8 @@ import { ChatArea } from './components/ChatArea';
 import { EditPage } from './components/EditPage';
 import { GithubDeployModal } from './components/GithubDeployModal';
 
-const USERS_STORAGE_KEY = 'chat_app_custom_users_v3';
-const CURRENT_USER_STORAGE_KEY = 'chat_app_current_user_v3';
+const USERS_STORAGE_KEY = 'chat_app_custom_users_v4';
+const CURRENT_USER_STORAGE_KEY = 'chat_app_current_user_v4';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(() => {
@@ -71,14 +72,50 @@ export default function App() {
 
   const navigateToChat = () => {
     window.location.hash = '';
-    // Also remove trailing # from URL if possible for clean look
     if (window.location.href.includes('#')) {
       history.pushState('', document.title, window.location.pathname + window.location.search);
       setCurrentHash('');
     }
   };
 
-  // Sync users to localStorage
+  // Real-time synchronization of users from Firestore across all devices and sessions
+  useEffect(() => {
+    const unsubscribe = subscribeToUsers((liveUsers) => {
+      if (liveUsers && liveUsers.length > 0) {
+        setUsers(liveUsers);
+
+        // Sync currentUser if it was updated in Firestore
+        setCurrentUser((prevCurrent) => {
+          const matched = liveUsers.find((u) => u.id === prevCurrent.id);
+          if (matched) {
+            return matched;
+          }
+          // If previous user doesn't exist anymore, fallback to first user in list
+          return liveUsers[0];
+        });
+
+        // Sync active partner if it was updated in Firestore
+        setActivePartner((prevPartner) => {
+          if (!prevPartner) {
+            const defaultPartner = liveUsers.find((u) => u.id !== currentUser.id);
+            return defaultPartner || null;
+          }
+          const matched = liveUsers.find((u) => u.id === prevPartner.id);
+          if (matched) {
+            return matched;
+          }
+          const nextPartner = liveUsers.find((u) => u.id !== currentUser.id);
+          return nextPartner || null;
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser.id]);
+
+  // Sync users to localStorage as local cache
   useEffect(() => {
     try {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
@@ -87,7 +124,7 @@ export default function App() {
     }
   }, [users]);
 
-  // Sync currentUser to localStorage
+  // Sync currentUser to localStorage as local cache
   useEffect(() => {
     try {
       localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(currentUser));

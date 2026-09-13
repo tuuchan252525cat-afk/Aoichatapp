@@ -11,7 +11,7 @@ import {
   query, 
   orderBy 
 } from './firebase';
-import { User, ChatMessage, Conversation } from '../types';
+import { User, ChatMessage } from '../types';
 import { CURRENT_USER, INITIAL_USERS, TOKUDOME_INITIAL_MESSAGES, OTHER_USERS_SEEDS } from './sampleData';
 
 const CHATS_COLLECTION = 'chats';
@@ -88,6 +88,42 @@ export async function seedInitialDataIfNeeded(): Promise<void> {
     }
   } catch (error) {
     console.warn('Firestore seeding notice (running client mode if offline):', error);
+  }
+}
+
+// Subscribe to users collection in real-time
+export function subscribeToUsers(
+  callback: (users: User[]) => void
+): () => void {
+  try {
+    const usersCol = collection(db, USERS_COLLECTION);
+
+    const unsubscribe = onSnapshot(usersCol, async (snapshot) => {
+      if (snapshot.empty) {
+        // If Firestore is completely empty on first load, seed initial data
+        console.log('No users found in Firestore, seeding default users...');
+        await seedInitialDataIfNeeded();
+        return;
+      }
+
+      const fetchedUsers: User[] = [];
+      snapshot.forEach((docSnap) => {
+        fetchedUsers.push({
+          id: docSnap.id,
+          ...docSnap.data()
+        } as User);
+      });
+
+      // Sort by creation or maintain stable ordering
+      callback(fetchedUsers);
+    }, (err) => {
+      console.warn('Users snapshot listener error:', err);
+    });
+
+    return unsubscribe;
+  } catch (err) {
+    console.error('Error creating users subscriber:', err);
+    return () => {};
   }
 }
 
@@ -243,22 +279,33 @@ export async function deleteFirestoreUser(userId: string): Promise<void> {
   }
 }
 
-// Reset chat messages to sample replica
+// Reset chat messages and restore sample replica
 export async function resetTokudomeChat(): Promise<void> {
-  const tokudomeChatId = getChatId(CURRENT_USER.id, 'tokudome');
-  const messagesCol = collection(db, CHATS_COLLECTION, tokudomeChatId, 'messages');
-  
-  // Get all existing and delete
-  const snapshot = await getDocs(messagesCol);
-  for (const docSnap of snapshot.docs) {
-    await deleteDoc(doc(messagesCol, docSnap.id));
-  }
+  try {
+    // Clear & re-seed users
+    const usersCol = collection(db, USERS_COLLECTION);
+    const allUsers = [CURRENT_USER, ...INITIAL_USERS];
+    for (const u of allUsers) {
+      await setDoc(doc(db, USERS_COLLECTION, u.id), u);
+    }
 
-  // Reseed
-  for (const msg of TOKUDOME_INITIAL_MESSAGES) {
-    await setDoc(doc(messagesCol, msg.id), {
-      ...msg,
-      chatId: tokudomeChatId
-    });
+    const tokudomeChatId = getChatId(CURRENT_USER.id, 'tokudome');
+    const messagesCol = collection(db, CHATS_COLLECTION, tokudomeChatId, 'messages');
+    
+    // Get all existing messages and delete
+    const snapshot = await getDocs(messagesCol);
+    for (const docSnap of snapshot.docs) {
+      await deleteDoc(doc(messagesCol, docSnap.id));
+    }
+
+    // Reseed Tokudome messages
+    for (const msg of TOKUDOME_INITIAL_MESSAGES) {
+      await setDoc(doc(messagesCol, msg.id), {
+        ...msg,
+        chatId: tokudomeChatId
+      });
+    }
+  } catch (err) {
+    console.error('Reset error in Firestore:', err);
   }
 }
