@@ -120,10 +120,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       aria-label={`チャット画面: ${partner.name}`}
       className="flex-1 flex flex-col h-full bg-white relative overflow-hidden"
     >
-      {/* Top Chat Header - shrink-0 & sticky so it NEVER disappears in mobile full screen */}
+      {/* Top Chat Header - safe-area aware & shrink-0 so it NEVER overlaps or disappears in mobile full screen or Chrome */}
       <div 
         id="chat-header"
-        className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-gray-100 flex items-center justify-between bg-white z-20 shrink-0 sticky top-0 shadow-2xs"
+        className="px-3 sm:px-4 pb-2.5 sm:pb-3 border-b border-gray-100 flex items-center justify-between bg-white z-20 shrink-0 sticky top-0 shadow-2xs safe-header-pt"
+        style={{ paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.875rem), 1.125rem)' }}
       >
         {/* Left: Active Conversation Partner Info */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
@@ -501,7 +502,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Chat Input Bar at Bottom */}
       <div 
         id="chat-input-container"
-        className="p-3 md:p-4 bg-white border-t border-gray-100"
+        className="px-3 pt-3 pb-3 md:px-4 md:pt-4 bg-white border-t border-gray-100 safe-footer-pb"
+        style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom, 0px) + 0.75rem), 0.75rem)' }}
       >
         <form onSubmit={handleSend} className="flex items-center gap-2 bg-[#efefef] rounded-3xl px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:bg-white border border-transparent focus-within:border-gray-200 transition-all">
           {/* File / Image Upload */}

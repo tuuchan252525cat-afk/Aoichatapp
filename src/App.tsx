@@ -371,7 +371,7 @@ export default function App() {
   return (
     <div 
       id="app-container"
-      className="flex h-screen h-[100dvh] w-screen bg-gray-100 font-sans text-gray-900 overflow-hidden"
+      className="flex h-[100dvh] min-h-[100dvh] w-full bg-gray-100 font-sans text-gray-900 overflow-hidden"
     >
       {/* 2-Column Responsive Layout */}
       <div className="flex w-full h-full max-w-7xl mx-auto shadow-2xl overflow-hidden bg-white md:border-x md:border-gray-200">

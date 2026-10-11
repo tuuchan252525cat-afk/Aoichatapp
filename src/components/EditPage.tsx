@@ -116,8 +116,11 @@ export const EditPage: React.FC<EditPageProps> = ({
       id="edit-page-container"
       className="min-h-screen w-full bg-gray-50 flex flex-col font-sans text-gray-900 pb-24"
     >
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-2xs">
+      {/* Top Header - safe-area aware */}
+      <header 
+        className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 sm:px-8 pb-3.5 flex items-center justify-between shadow-2xs safe-header-pt"
+        style={{ paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.875rem), 1.125rem)' }}
+      >
         <div className="flex items-center gap-3">
           <button
             id="back-to-chat-btn"

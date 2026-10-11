@@ -44,8 +44,11 @@ export const UserList: React.FC<UserListProps> = ({
       aria-label="ユーザー一覧サイドバー"
       className="w-full md:w-80 lg:w-96 bg-white border-r border-gray-200 flex flex-col h-full select-none"
     >
-      {/* Top Header matching Screenshot 1 */}
-      <div className="px-4 pt-4 pb-3 border-b border-gray-100">
+      {/* Top Header matching Screenshot 1 - safe-area aware */}
+      <div 
+        className="px-4 pb-3 border-b border-gray-100 safe-header-pt"
+        style={{ paddingTop: 'max(calc(env(safe-area-inset-top, 0px) + 0.875rem), 1.125rem)' }}
+      >
         <div className="flex items-center justify-between mb-3">
           {/* User Profile Switcher Trigger */}
           <div className="relative">
