@@ -114,7 +114,7 @@ export const EditPage: React.FC<EditPageProps> = ({
   return (
     <div 
       id="edit-page-container"
-      className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900"
+      className="min-h-screen w-full bg-gray-50 flex flex-col font-sans text-gray-900 pb-24"
     >
       {/* Top Header */}
       <header className="sticky top-0 z-30 bg-white border-b border-gray-200 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-2xs">
@@ -359,6 +359,43 @@ export const EditPage: React.FC<EditPageProps> = ({
               </div>
 
               <div className="space-y-2">
+                {users.length > 1 && (
+                  <div className="bg-indigo-50/70 rounded-xl p-3 border border-indigo-100">
+                    <label className="block text-[11px] font-bold text-indigo-900 mb-1.5">
+                      操作アカウントを切り替える:
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {users.map((u) => {
+                        const isCurrent = u.id === currentUser.id;
+                        return (
+                          <button
+                            key={u.id}
+                            id={`quick-switch-btn-${u.id}`}
+                            onClick={() => {
+                              onSwitchCurrentUser(u);
+                              setSuccessMessage(`操作アカウントを「${u.name}」に切り替えました！`);
+                              setTimeout(() => setSuccessMessage(''), 3000);
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                                : 'bg-white hover:bg-indigo-100/70 text-gray-700 border border-indigo-200/60'
+                            }`}
+                          >
+                            <img
+                              src={u.avatarUrl}
+                              alt={u.name}
+                              className="w-4 h-4 rounded-full object-cover shrink-0"
+                            />
+                            <span>{u.name}</span>
+                            {isCurrent && <span className="text-[10px] bg-indigo-700 px-1 rounded text-indigo-100">YOU</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <button
                   id="edit-current-account-btn"
                   onClick={() => setEditingUser(currentUser)}
@@ -461,9 +498,13 @@ export const EditPage: React.FC<EditPageProps> = ({
                     {!isCurrent && (
                       <button
                         id={`switch-to-user-${user.id}`}
-                        onClick={() => onSwitchCurrentUser(user)}
+                        onClick={() => {
+                          onSwitchCurrentUser(user);
+                          setSuccessMessage(`操作アカウントを「${user.name}」に切り替えました！`);
+                          setTimeout(() => setSuccessMessage(''), 3000);
+                        }}
                         title="このユーザーとして操作"
-                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-white rounded-xl border border-transparent hover:border-gray-200 transition cursor-pointer text-xs font-medium"
+                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 rounded-xl border border-blue-200 transition cursor-pointer text-xs font-semibold shadow-2xs"
                       >
                         切替
                       </button>

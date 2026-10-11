@@ -344,7 +344,7 @@ export default function App() {
   // If URL hash is #edit, render the comprehensive Edit & User Management Page
   if (currentHash === '#edit' || currentHash.startsWith('#edit')) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen h-[100dvh] overflow-y-auto bg-gray-50 flex flex-col">
         <EditPage
           users={users}
           currentUser={currentUser}
@@ -371,7 +371,7 @@ export default function App() {
   return (
     <div 
       id="app-container"
-      className="flex h-screen w-screen bg-gray-100 font-sans text-gray-900 overflow-hidden"
+      className="flex h-screen h-[100dvh] w-screen bg-gray-100 font-sans text-gray-900 overflow-hidden"
     >
       {/* 2-Column Responsive Layout */}
       <div className="flex w-full h-full max-w-7xl mx-auto shadow-2xl overflow-hidden bg-white md:border-x md:border-gray-200">
@@ -398,10 +398,13 @@ export default function App() {
               partner={activePartner}
               currentUser={currentUser}
               messages={messages}
+              users={users}
               onSendMessage={handleSendMessage}
               onToggleReaction={handleToggleReaction}
               onDeleteMessage={handleDeleteMessage}
               onBackMobile={() => setIsMobileChatOpen(false)}
+              onSwitchCurrentUser={handleSwitchCurrentUser}
+              onNavigateToEdit={navigateToEdit}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-[#fafafa]">

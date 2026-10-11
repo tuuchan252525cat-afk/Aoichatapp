@@ -13,7 +13,8 @@ import {
   ChevronLeft,
   Trash2,
   Copy,
-  Sparkles
+  Sparkles,
+  Settings
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -21,26 +22,33 @@ interface ChatAreaProps {
   partner: User;
   currentUser: User;
   messages: ChatMessage[];
+  users?: User[];
   onSendMessage: (text: string, replyTo?: MessageReply, imageUrl?: string) => void;
   onToggleReaction: (messageId: string, emoji: string, currentReactions?: Record<string, string[]>) => void;
   onDeleteMessage: (messageId: string) => void;
   onBackMobile?: () => void;
+  onSwitchCurrentUser?: (user: User) => void;
+  onNavigateToEdit?: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   partner,
   currentUser,
   messages,
+  users = [],
   onSendMessage,
   onToggleReaction,
   onDeleteMessage,
-  onBackMobile
+  onBackMobile,
+  onSwitchCurrentUser,
+  onNavigateToEdit
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   const [activeReactionPickerId, setActiveReactionPickerId] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [showPovSwitcher, setShowPovSwitcher] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -112,51 +120,146 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       aria-label={`チャット画面: ${partner.name}`}
       className="flex-1 flex flex-col h-full bg-white relative overflow-hidden"
     >
-      {/* Top Chat Header matching Screenshot 2 */}
+      {/* Top Chat Header - shrink-0 & sticky so it NEVER disappears in mobile full screen */}
       <div 
         id="chat-header"
-        className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-white z-10"
+        className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-gray-100 flex items-center justify-between bg-white z-20 shrink-0 sticky top-0 shadow-2xs"
       >
-        <div className="flex items-center gap-3">
+        {/* Left: Active Conversation Partner Info */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 mr-2">
           {/* Mobile back button */}
           {onBackMobile && (
             <button 
+              id="chat-mobile-back-btn"
               onClick={onBackMobile}
-              className="md:hidden p-1.5 -ml-1 text-gray-700 hover:bg-gray-100 rounded-full cursor-pointer"
+              className="md:hidden p-1.5 -ml-1 text-gray-700 hover:bg-gray-100 rounded-full cursor-pointer shrink-0 transition"
+              title="一覧に戻る"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           )}
 
-          <div className="relative">
+          <div className="relative shrink-0">
             <img
               src={partner.avatarUrl}
               alt={partner.name}
-              className="w-10 h-10 rounded-full object-cover ring-1 ring-black/5"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-black/5"
             />
             {partner.status === 'online' && (
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-500 border-2 border-white rounded-full"></span>
             )}
           </div>
 
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 tracking-tight leading-snug">
-              {partner.name}
-            </h2>
-            <p className="text-xs text-gray-500">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h2 id="chat-partner-name" className="text-sm sm:text-base font-bold text-gray-900 tracking-tight leading-snug truncate">
+                {partner.name}
+              </h2>
+              <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.2 rounded font-normal shrink-0 hidden xs:inline">
+                会話相手
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-gray-500 truncate">
               {partner.status === 'online' ? 'アクティブ中' : (partner.lastActive ? `${partner.lastActive}前にオンライン` : 'オフライン')}
             </p>
           </div>
         </div>
 
-        {/* Action icons on right */}
-        <div className="flex items-center gap-1 text-gray-700">
+        {/* Right: Current Logged-in User Badge (Visible on Mobile Full-Screen!) & Action Buttons */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Current Logged-in POV user indicator & switch menu */}
+          <div className="relative">
+            <button
+              id="chat-header-current-user-btn"
+              onClick={() => setShowPovSwitcher(!showPovSwitcher)}
+              className="flex items-center gap-1.5 pl-1.5 pr-2 py-1 bg-gray-50 hover:bg-blue-50/70 border border-gray-200/80 rounded-full transition cursor-pointer text-xs group"
+              title="現在ログイン中のアカウント確認・切り替え"
+            >
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.name}
+                className="w-5 h-5 rounded-full object-cover ring-1 ring-blue-500/30 shrink-0"
+              />
+              <span className="max-w-[70px] sm:max-w-[100px] truncate text-gray-700 font-medium group-hover:text-blue-700">
+                {currentUser.name}
+              </span>
+              {onSwitchCurrentUser && users.length > 1 && (
+                <svg className={`w-3 h-3 text-gray-400 transition-transform ${showPovSwitcher ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+
+            {/* Quick Switch Dropdown */}
+            {showPovSwitcher && onSwitchCurrentUser && (
+              <div 
+                id="chat-pov-switch-dropdown"
+                className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+              >
+                <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                  操作アカウント切り替え
+                </div>
+                {users.map((u) => {
+                  const isCurrent = u.id === currentUser.id;
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={() => {
+                        onSwitchCurrentUser(u);
+                        setShowPovSwitcher(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-gray-50 transition cursor-pointer ${
+                        isCurrent ? 'bg-blue-50/70 text-blue-600 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <img 
+                          src={u.avatarUrl} 
+                          alt={u.name} 
+                          className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-200 shrink-0" 
+                        />
+                        <span className="text-xs truncate">{u.name}</span>
+                      </div>
+                      {isCurrent && <span className="text-[10px] text-blue-600 font-bold shrink-0">ログイン中</span>}
+                    </button>
+                  );
+                })}
+                {onNavigateToEdit && (
+                  <div className="mt-1 pt-1 border-t border-gray-100 px-2">
+                    <button
+                      onClick={() => {
+                        setShowPovSwitcher(false);
+                        onNavigateToEdit();
+                      }}
+                      className="w-full text-center py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition cursor-pointer"
+                    >
+                      ＋ ユーザー管理画面 (#edit)
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Quick link to #edit */}
+          {onNavigateToEdit && (
+            <button
+              id="chat-header-settings-btn"
+              onClick={onNavigateToEdit}
+              title="ユーザー管理・設定 (#edit)"
+              className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-blue-600 transition cursor-pointer"
+            >
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+          )}
+
+          {/* Info Modal trigger */}
           <button 
             id="chat-info-btn"
             title="詳細情報" 
-            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 hover:text-gray-900 transition cursor-pointer"
+            className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-900 transition cursor-pointer"
           >
-            <Info className="w-5 h-5" />
+            <Info className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       </div>
