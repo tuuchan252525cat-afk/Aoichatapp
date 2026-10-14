@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, ChatMessage, MessageReply } from './types';
 import { CURRENT_USER, INITIAL_USERS } from './lib/sampleData';
 import { 
   getChatId, 
   subscribeToUsers,
-  subscribeToMessages, 
+  subscribeToMessages,
+  subscribeToAllChats,
   sendChatMessage, 
   toggleMessageReaction, 
   deleteChatMessage,
@@ -14,6 +15,13 @@ import {
   updateFirestoreUser,
   deleteFirestoreUser
 } from './lib/chatService';
+import { 
+  isNotificationSupported,
+  getNotificationPermissionState,
+  requestNotificationPermission,
+  registerNotificationServiceWorker,
+  triggerIncomingMessageNotification
+} from './lib/notificationService';
 import { UserList } from './components/UserList';
 import { ChatArea } from './components/ChatArea';
 import { EditPage } from './components/EditPage';
@@ -50,6 +58,55 @@ export default function App() {
   const [isMobileChatOpen, setIsMobileChatOpen] = useState<boolean>(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState<boolean>(false);
 
+  // Notification Permission State & Prompt
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 
+    getNotificationPermissionState()
+  );
+  const [showNotificationBanner, setShowNotificationBanner] = useState<boolean>(() => {
+    if (!isNotificationSupported()) return false;
+    const dismissed = localStorage.getItem('dismissed_notification_prompt');
+    return getNotificationPermissionState() === 'default' && !dismissed;
+  });
+
+  const [allChatsSummaries, setAllChatsSummaries] = useState<Record<string, { lastMessageText: string; lastMessageSenderId: string; lastMessageTime: number }>>({});
+  const initialMountTimeRef = useRef<number>(Date.now());
+
+  // Register Service Worker on mount & listen to notification click events
+  useEffect(() => {
+    registerNotificationServiceWorker();
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      const handleSwMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'OPEN_CHAT_PARTNER' && event.data?.partnerId) {
+          const partnerId = event.data.partnerId;
+          const target = users.find((u) => u.id === partnerId);
+          if (target) {
+            setActivePartner(target);
+            setIsMobileChatOpen(true);
+            navigateToChat();
+          }
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      };
+    }
+  }, [users]);
+
+  // Request Notification permission
+  const handleAllowNotification = async () => {
+    const res = await requestNotificationPermission();
+    setNotificationPermission(res);
+    setShowNotificationBanner(false);
+  };
+
+  const handleDismissNotificationBanner = () => {
+    setShowNotificationBanner(false);
+    localStorage.setItem('dismissed_notification_prompt', 'true');
+  };
+
   // Hash-based routing (#edit or standard chat)
   const [currentHash, setCurrentHash] = useState<string>(() => {
     return window.location.hash || '';
@@ -57,14 +114,25 @@ export default function App() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      setCurrentHash(window.location.hash || '');
+      const hash = window.location.hash || '';
+      setCurrentHash(hash);
+
+      // Handle #partner=userId navigation (e.g. from notification click in new tab)
+      if (hash.startsWith('#partner=')) {
+        const pId = hash.replace('#partner=', '');
+        const target = users.find((u) => u.id === pId);
+        if (target) {
+          setActivePartner(target);
+          setIsMobileChatOpen(true);
+        }
+      }
     };
 
     window.addEventListener('hashchange', handleHashChange);
     return () => {
       window.removeEventListener('hashchange', handleHashChange);
     };
-  }, []);
+  }, [users]);
 
   const navigateToEdit = () => {
     window.location.hash = '#edit';
@@ -139,6 +207,45 @@ export default function App() {
     return getChatId(currentUser.id, activePartner.id);
   }, [currentUser.id, activePartner]);
 
+  // Subscribe to all chats to update sidebar summaries & fire background notifications
+  useEffect(() => {
+    const unsubscribe = subscribeToAllChats((chats) => {
+      setAllChatsSummaries(chats);
+
+      // Check for incoming messages across all conversations
+      for (const [chatId, info] of Object.entries(chats)) {
+        if (info.lastMessageTime > initialMountTimeRef.current && info.lastMessageSenderId !== currentUser.id) {
+          const partner = users.find((u) => u.id === info.lastMessageSenderId || getChatId(currentUser.id, u.id) === chatId);
+          if (partner) {
+            // Control Rule: If user is actively looking at this chat in foreground -> Suppress notification
+            const isViewingThisChat = (activePartner?.id === partner.id) && isMobileChatOpen && !document.hidden && currentHash !== '#edit';
+            triggerIncomingMessageNotification({
+              senderId: partner.id,
+              senderName: partner.name,
+              senderAvatar: partner.avatarUrl,
+              text: info.lastMessageText,
+              partnerId: partner.id
+            }, {
+              isCurrentChatActive: isViewingThisChat,
+              onNotificationClick: (pId) => {
+                const target = users.find((u) => u.id === pId);
+                if (target) {
+                  setActivePartner(target);
+                  setIsMobileChatOpen(true);
+                  navigateToChat();
+                }
+              }
+            });
+          }
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser.id, users, activePartner, isMobileChatOpen, currentHash]);
+
   // Subscribe to real-time messages for the active conversation
   useEffect(() => {
     if (!currentChatId || !activePartner) {
@@ -148,12 +255,36 @@ export default function App() {
 
     const unsubscribe = subscribeToMessages(currentChatId, (liveMsgs) => {
       setMessages(liveMsgs || []);
+
+      // If document is in background (hidden) and a new message arrived from active partner
+      if (liveMsgs && liveMsgs.length > 0) {
+        const lastMsg = liveMsgs[liveMsgs.length - 1];
+        if (
+          lastMsg.timestamp > initialMountTimeRef.current && 
+          lastMsg.senderId !== currentUser.id && 
+          document.hidden
+        ) {
+          triggerIncomingMessageNotification({
+            senderId: lastMsg.senderId,
+            senderName: lastMsg.senderName,
+            senderAvatar: lastMsg.senderAvatar,
+            text: lastMsg.text,
+            imageUrl: lastMsg.imageUrl,
+            partnerId: activePartner.id
+          }, {
+            isCurrentChatActive: false, // Tab is hidden, show OS notification
+            onNotificationClick: () => {
+              window.focus();
+            }
+          });
+        }
+      }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [currentChatId, activePartner]);
+  }, [currentChatId, activePartner, currentUser.id]);
 
   // Handle Send Message
   const handleSendMessage = async (text: string, replyTo?: MessageReply, imageUrl?: string) => {
@@ -328,6 +459,22 @@ export default function App() {
   const conversationsSummary = useMemo(() => {
     const summary: Record<string, { lastText: string; time: string; senderId: string; isLiked?: boolean }> = {};
 
+    // Populate from all chats in Firestore
+    for (const u of users) {
+      if (u.id === currentUser.id) continue;
+      const cId = getChatId(currentUser.id, u.id);
+      const chatInfo = allChatsSummaries[cId];
+      if (chatInfo && chatInfo.lastMessageText) {
+        summary[u.id] = {
+          lastText: chatInfo.lastMessageText,
+          time: '今',
+          senderId: chatInfo.lastMessageSenderId,
+          isLiked: false
+        };
+      }
+    }
+
+    // Override active conversation with latest live messages
     if (messages.length > 0 && activePartner) {
       const last = messages[messages.length - 1];
       summary[activePartner.id] = {
@@ -339,12 +486,41 @@ export default function App() {
     }
 
     return summary;
-  }, [messages, activePartner]);
+  }, [messages, activePartner, users, currentUser.id, allChatsSummaries]);
 
   // If URL hash is #edit, render the comprehensive Edit & User Management Page
   if (currentHash === '#edit' || currentHash.startsWith('#edit')) {
     return (
       <div className="min-h-screen h-[100dvh] overflow-y-auto bg-gray-50 flex flex-col">
+        {/* Optional Notification Permission Prompt in Edit Page too */}
+        {showNotificationBanner && notificationPermission === 'default' && (
+          <div 
+            id="notification-permission-banner-edit"
+            className="bg-blue-600 text-white px-4 py-2 text-xs flex items-center justify-between shrink-0 shadow-sm"
+          >
+            <div className="flex items-center gap-2 truncate mr-2">
+              <span className="text-sm">🔔</span>
+              <span className="truncate">新着メッセージのプッシュ通知を受け取りますか？</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                id="edit-banner-allow-notification-btn"
+                onClick={handleAllowNotification}
+                className="bg-white text-blue-700 hover:bg-blue-50 font-bold px-3 py-1 rounded-lg text-xs transition cursor-pointer"
+              >
+                許可する
+              </button>
+              <button
+                id="edit-banner-dismiss-notification-btn"
+                onClick={handleDismissNotificationBanner}
+                className="text-blue-100 hover:text-white px-2 py-1 cursor-pointer"
+              >
+                あとで
+              </button>
+            </div>
+          </div>
+        )}
+
         <EditPage
           users={users}
           currentUser={currentUser}
@@ -371,10 +547,39 @@ export default function App() {
   return (
     <div 
       id="app-container"
-      className="flex h-[100dvh] min-h-[100dvh] w-full bg-gray-100 font-sans text-gray-900 overflow-hidden"
+      className="flex flex-col h-[100dvh] min-h-[100dvh] w-full bg-gray-100 font-sans text-gray-900 overflow-hidden relative"
     >
+      {/* Non-intrusive Notification Permission Prompt Banner */}
+      {showNotificationBanner && notificationPermission === 'default' && (
+        <div 
+          id="notification-permission-banner"
+          className="bg-blue-600 text-white px-4 py-2 text-xs flex items-center justify-between shrink-0 shadow-md z-40 animate-in slide-in-from-top duration-200"
+        >
+          <div className="flex items-center gap-2 truncate mr-2">
+            <span className="text-base shrink-0">🔔</span>
+            <span className="truncate">新着メッセージのプッシュ通知を受け取りますか？（バックグラウンド受信対応）</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              id="banner-allow-notification-btn"
+              onClick={handleAllowNotification}
+              className="bg-white text-blue-700 hover:bg-blue-50 font-bold px-3 py-1 rounded-lg shadow-2xs transition cursor-pointer"
+            >
+              許可する
+            </button>
+            <button
+              id="banner-dismiss-notification-btn"
+              onClick={handleDismissNotificationBanner}
+              className="text-blue-100 hover:text-white px-2 py-1 cursor-pointer"
+            >
+              あとで
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 2-Column Responsive Layout */}
-      <div className="flex w-full h-full max-w-7xl mx-auto shadow-2xl overflow-hidden bg-white md:border-x md:border-gray-200">
+      <div className="flex flex-1 w-full h-full max-w-7xl mx-auto shadow-2xl overflow-hidden bg-white md:border-x md:border-gray-200">
         {/* Left: User List (Sidebar) */}
         <div className={`w-full md:w-80 lg:w-96 shrink-0 h-full ${isMobileChatOpen ? 'hidden md:flex' : 'flex'}`}>
           <UserList

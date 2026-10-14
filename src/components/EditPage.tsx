@@ -14,10 +14,19 @@ import {
   UserCheck, 
   ShieldAlert,
   MessageSquare,
-  Plus
+  Plus,
+  Bell,
+  BellRing,
+  BellOff
 } from 'lucide-react';
 import { processAvatarFile } from '../lib/imageUtils';
 import { EditProfileModal } from './EditProfileModal';
+import { 
+  isNotificationSupported, 
+  getNotificationPermissionState, 
+  requestNotificationPermission,
+  triggerIncomingMessageNotification 
+} from '../lib/notificationService';
 
 interface EditPageProps {
   users: User[];
@@ -62,8 +71,53 @@ export const EditPage: React.FC<EditPageProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() => 
+    getNotificationPermissionState()
+  );
+  const [testCountdown, setTestCountdown] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleRequestNotification = async () => {
+    const res = await requestNotificationPermission();
+    setNotificationPermission(res);
+    if (res === 'granted') {
+      setSuccessMessage('通知の受け取りが許可されました！バックグラウンド受信が可能です。');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    }
+  };
+
+  const handleTriggerTestNotification = () => {
+    if (notificationPermission !== 'granted') {
+      handleRequestNotification();
+      return;
+    }
+
+    setTestCountdown(4);
+    let count = 4;
+    const timer = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        clearInterval(timer);
+        setTestCountdown(null);
+        const testPartner = users.find((u) => u.id !== currentUser.id) || users[0];
+        triggerIncomingMessageNotification({
+          senderId: testPartner.id,
+          senderName: testPartner.name,
+          senderAvatar: testPartner.avatarUrl,
+          text: 'こんにちは！通知テストです。クリックすると該当チャット画面へ遷移します🔔',
+          partnerId: testPartner.id
+        }, {
+          isCurrentChatActive: false,
+          onNotificationClick: () => {
+            onBackToChat();
+          }
+        });
+      } else {
+        setTestCountdown(count);
+      }
+    }, 1000);
+  };
 
   const handleFileChange = async (file: File) => {
     try {
@@ -407,6 +461,79 @@ export const EditPage: React.FC<EditPageProps> = ({
                   <Edit3 className="w-3.5 h-3.5 text-gray-600" />
                   ログイン中アカウントのアイコン・名前を編集
                 </button>
+              </div>
+            </div>
+
+            {/* Web Push & Message Notifications Settings Card */}
+            <div className="bg-white rounded-2xl p-6 shadow-xs border border-gray-200/80">
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900">新着メッセージ通知 (Web Push)</h3>
+                    <p className="text-[11px] text-gray-500">バックグラウンド受信・Service Worker連携</p>
+                  </div>
+                </div>
+                {notificationPermission === 'granted' ? (
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    有効 (許可済)
+                  </span>
+                ) : notificationPermission === 'denied' ? (
+                  <span className="text-[11px] font-semibold text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                    ブロック中
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                    未設定
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-3 text-xs text-gray-600">
+                <div className="bg-gray-50 p-3 rounded-xl space-y-1.5 text-[11px]">
+                  <p className="font-semibold text-gray-800 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    動作仕様と制御ルール:
+                  </p>
+                  <ul className="space-y-1 pl-3 text-gray-600 list-disc">
+                    <li><strong>通知許可（Permission）</strong>: 初回アクセスまたはこの画面から要求ダイアログを表示</li>
+                    <li><strong>通知発行（Notification）</strong>: 送信者名・アバターアイコン・本文プレビュー・クリック時チャット遷移</li>
+                    <li><strong>制御処理</strong>: チャット閲覧中（フォアグラウンド）はOS通知を抑制し、別タブ・非表示時のみ発火</li>
+                  </ul>
+                </div>
+
+                {notificationPermission !== 'granted' ? (
+                  <button
+                    id="request-notification-btn"
+                    type="button"
+                    onClick={handleRequestNotification}
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <BellRing className="w-4 h-4" />
+                    通知の受け取りを許可する
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <button
+                      id="trigger-test-notification-btn"
+                      type="button"
+                      disabled={testCountdown !== null}
+                      onClick={handleTriggerTestNotification}
+                      className="w-full py-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-semibold rounded-xl border border-indigo-200 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      <BellRing className="w-4 h-4 text-indigo-600" />
+                      {testCountdown !== null
+                        ? `⏱️ ${testCountdown}秒後に通知送信（別タブを開いてください）`
+                        : '通知テストを実行（4秒後に通知送信）'}
+                    </button>
+                    <p className="text-[10px] text-gray-400 text-center">
+                      ※ボタンを押してすぐ別のタブやデスクトップに切り替えるとバックグラウンド通知を試せます
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

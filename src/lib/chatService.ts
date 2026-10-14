@@ -179,6 +179,32 @@ export function subscribeToMessages(
   }
 }
 
+// Subscribe to all chats summaries in real-time
+export function subscribeToAllChats(
+  callback: (chats: Record<string, { lastMessageText: string; lastMessageSenderId: string; lastMessageTime: number }>) => void
+): () => void {
+  try {
+    const chatsCol = collection(db, CHATS_COLLECTION);
+    return onSnapshot(chatsCol, (snapshot) => {
+      const result: Record<string, { lastMessageText: string; lastMessageSenderId: string; lastMessageTime: number }> = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        result[docSnap.id] = {
+          lastMessageText: data.lastMessageText || '',
+          lastMessageSenderId: data.lastMessageSenderId || '',
+          lastMessageTime: data.lastMessageTime || 0
+        };
+      });
+      callback(result);
+    }, (err) => {
+      console.warn('All chats snapshot error:', err);
+    });
+  } catch (err) {
+    console.error('Error creating all chats subscriber:', err);
+    return () => {};
+  }
+}
+
 // Send a new message
 export async function sendChatMessage(
   chatId: string,
